@@ -1,0 +1,917 @@
+@import "tailwindcss";
+
+/**
+ * A dark instrument panel around a bright picture.
+ *
+ * The imagery in the preview is loud and varied — reds, iridescence, deep
+ * blacks. So the interface is achromatic on purpose: every colour on this page
+ * should come from the shape itself, and the one accent is spent only
+ * on state (a filled slider track, a focus ring, a confirmation). Chrome that
+ * competed with the preview would be chrome that spoiled the screenshot, and the
+ * screenshot is the advertisement.
+ */
+@theme inline {
+  --color-scr-ink: #08090b;
+  --color-scr-panel: #0f1013;
+  --color-scr-raised: #16181c;
+  --color-scr-line: #232529;
+  --color-scr-line-strong: #33363d;
+  /* Three steps of emphasis, and every one of them legible.
+   *
+   * The first pass set these by eye on a bright screen and they measured badly:
+   * `faint` came out at 2.89:1 on the panel and `muted` at 5.96, so the section
+   * titles, the tool name, the inert notes and the file sizes were all at or
+   * under the line. Measured on 11 Aug 2026 and raised together, which keeps the
+   * hierarchy — 15.4 : 9.2 : 5.8 against the panel — while putting the bottom of
+   * it comfortably past the 4.5:1 AA floor rather than under it. */
+  --color-scr-text: #e9e7e2;
+  --color-scr-muted: #b2b4ba;
+  --color-scr-faint: #8b8e95;
+  --color-scr-accent: #cdff3e;
+
+  --font-scr-display: var(--font-instrument-serif);
+  --font-scr-sans: var(--font-schibsted);
+  --font-scr-mono: var(--font-jetbrains-mono);
+}
+
+html {
+  color-scheme: dark;
+}
+
+body {
+  background-color: var(--color-scr-ink);
+  color: var(--color-scr-text);
+  font-family: var(--font-scr-sans);
+  /* A barely-there grain, so the near-black reads as a surface rather than as
+     an absence. Fixed attachment keeps it from swimming while the page scrolls. */
+  background-image: radial-gradient(rgba(255, 255, 255, 0.022) 1px, transparent 1px);
+  background-size: 3px 3px;
+  background-attachment: fixed;
+}
+
+/* One orchestrated arrival rather than a scattering of micro-animations. */
+@keyframes scr-rise {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.rise {
+  animation: scr-rise 620ms cubic-bezier(0.32, 0.72, 0, 1) both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .rise {
+    animation-duration: 1ms;
+  }
+}
+
+
+/* One easing for everything on this page that moves — the iOS drawer curve. A
+   page whose parts decelerate differently reads as several pieces of software. */
+:root {
+  --scr-ease: cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+/* The editor is one locked screen. Scoped to a class the editor adds and
+   removes, because the catalogue pages under the same root layout still scroll. */
+.scr-locked,
+.scr-locked body {
+  height: 100%;
+  overflow: hidden;
+  overscroll-behavior: none;
+}
+
+/* --- the tool drawer's scrollbar -----------------------------------------
+   Dark, thin, and only as loud as it needs to be. Firefox takes the two
+   properties; every other engine takes the pseudo-elements. */
+.scr-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.14) transparent;
+  overscroll-behavior: contain;
+}
+
+.scr-scroll::-webkit-scrollbar {
+  width: 8px;
+}
+
+.scr-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.scr-scroll::-webkit-scrollbar-thumb {
+  border: 2px solid transparent;
+  background-clip: padding-box;
+  border-radius: 999px;
+  background-color: rgba(255, 255, 255, 0.14);
+}
+
+.scr-scroll::-webkit-scrollbar-thumb:hover {
+  background-color: rgba(255, 255, 255, 0.24);
+}
+
+/* Controls dissolve as they pass under the pinned header rather than colliding
+   with its edge. */
+.scr-scroll-fade {
+  mask-image: linear-gradient(to bottom, transparent 0, #000 24px);
+}
+
+/* --- the glow --------------------------------------------------------------
+   The one piece of colour in the interface: a low, wide ember on the drawer's
+   bottom edge, grained so it reads as a surface rather than as a gradient. It
+   sits behind the controls and never over them. */
+.scr-glow {
+  position: absolute;
+  inset-inline: 0;
+  bottom: 0;
+  height: 320px;
+  pointer-events: none;
+  background: radial-gradient(
+    150% 105% at 50% 122%,
+    rgba(255, 128, 66, 0.42) 0%,
+    rgba(255, 118, 58, 0.16) 40%,
+    rgba(255, 110, 50, 0.05) 62%,
+    transparent 78%
+  );
+}
+
+.scr-glow::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  opacity: 0.28;
+  mix-blend-mode: overlay;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3'/%3E%3C/filter%3E%3Crect width='120' height='120' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
+/* --- the sliders -----------------------------------------------------------
+   A deep capsule with the label and the number inside it, a faint field of
+   ticks to read a position against, and one bright mark at the value. The real
+   <input type="range"> lies invisible on top, so the keyboard, the tab order
+   and screen readers stay the browser's job rather than ours.
+
+   `--k` is the value as 0..1, written inline by the control. The mark travels
+   between 10px and 10px-from-the-right, which is exactly where a 20px-wide
+   native thumb puts its centre — so the bright line sits under the pointer at
+   both ends instead of drifting away from it. */
+.scr-slider {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  height: 40px;
+  padding: 0 14px;
+  border-radius: 13px;
+  overflow: hidden;
+  background: var(--color-scr-raised);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.05);
+  transition: background-color 120ms ease-out;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .scr-slider:hover {
+    background: #191b20;
+  }
+}
+
+.scr-slider:focus-within {
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.05),
+    0 0 0 2px rgba(255, 255, 255, 0.35);
+}
+
+.scr-slider__ticks {
+  position: absolute;
+  inset: 0 10px;
+  background-image: repeating-linear-gradient(
+    to right,
+    rgba(255, 255, 255, 0.075) 0 1px,
+    transparent 1px 12px
+  );
+}
+
+.scr-slider__fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: calc(10px + (100% - 20px) * var(--k));
+  background: rgba(255, 255, 255, 0.085);
+}
+
+/* The middle, on a dial whose halves mean opposite things — zero, and the thing
+   you are aiming for when you want the dial off. It was drawn at 0.16 white,
+   which measures 1.63:1 against the capsule: below the 3:1 floor a control that
+   means something has to clear, and in practice invisible. Taller than the
+   moving mark and duller than it, so the two never read as the same object. */
+.scr-slider__centre {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 2px;
+  height: 26px;
+  border-radius: 1px;
+  transform: translate(-50%, -50%);
+  background: rgba(255, 255, 255, 0.34);
+}
+
+.scr-slider__mark {
+  position: absolute;
+  top: 50%;
+  left: calc(10px + (100% - 20px) * var(--k));
+  width: 2px;
+  height: 18px;
+  border-radius: 1.5px;
+  transform: translate(-50%, -50%);
+  background: rgba(255, 255, 255, 0.9);
+  /* Only the size answers to being grabbed. The position must not be eased —
+     it has to sit under the pointer exactly or the slider feels broken. */
+  transition:
+    width 220ms var(--scr-ease),
+    height 220ms var(--scr-ease),
+    background-color 220ms ease-out;
+}
+
+/* The one control you touch most often, acknowledging that you touched it. */
+.scr-slider:has(.scr-slider__input:active) .scr-slider__mark {
+  width: 4px;
+  height: 28px;
+  background: #ffffff;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .scr-slider:hover .scr-slider__mark {
+    height: 22px;
+  }
+}
+
+.scr-slider__label,
+.scr-slider__value {
+  position: relative;
+  z-index: 2;
+}
+
+.scr-slider__label {
+  pointer-events: none;
+}
+
+.scr-slider__input {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  opacity: 0;
+  cursor: ew-resize;
+  -webkit-appearance: none;
+  appearance: none;
+  background: transparent;
+}
+
+.scr-slider__input::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 20px;
+  height: 40px;
+}
+
+.scr-slider__input::-moz-range-thumb {
+  width: 20px;
+  height: 40px;
+  border: 0;
+}
+
+.scr-slider__input:disabled {
+  cursor: default;
+}
+
+/* The number doubles as a scrub handle, so it has to sit above the input. */
+.scr-slider__value {
+  z-index: 4;
+}
+
+/* --- the way back from an edit -------------------------------------------- */
+@keyframes scr-pop {
+  from {
+    opacity: 0;
+    transform: scale(0.8);
+  }
+}
+
+.scr-reset {
+  animation: scr-pop 140ms var(--scr-ease) both;
+}
+
+/* Appearing gently and vanishing instantly reads as a glitch. */
+@starting-style {
+  .scr-reset {
+    opacity: 0;
+  }
+}
+
+/* --- pills -----------------------------------------------------------------
+   Two to four choices in one capsule, with a single lit region that slides
+   between them. Two backgrounds crossfading reads as two things blinking; one
+   thing moving reads as a choice being made. `--i` is which option is live and
+   `--n` how many there are. */
+.scr-pill {
+  position: relative;
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: 1fr;
+  padding: 3px;
+  border-radius: 11px;
+  background: var(--color-scr-raised);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.05);
+}
+
+.scr-pill__lit {
+  position: absolute;
+  top: 3px;
+  bottom: 3px;
+  left: calc(3px + (100% - 6px) * var(--i) / var(--n));
+  width: calc((100% - 6px) / var(--n));
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.1);
+  transition: left 180ms var(--scr-ease);
+}
+
+.scr-pill__option {
+  position: relative;
+  z-index: 1;
+  min-height: 24px;
+  padding: 0 8px;
+  border-radius: 8px;
+  font-size: 11px;
+  line-height: 1;
+  transition:
+    color 120ms ease-out,
+    transform 140ms ease-out;
+}
+
+.scr-pill__option:active:not(:disabled) {
+  transform: scale(0.96);
+}
+
+.scr-pill__option:focus-visible {
+  outline: 2px solid rgba(255, 255, 255, 0.6);
+  outline-offset: -2px;
+}
+
+.scr-pill__option:disabled {
+  cursor: default;
+}
+
+/* --- chips -----------------------------------------------------------------
+   A word and a glyph on a faint slab. The only badge shape in the interface. */
+.scr-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px;
+  border-radius: 999px;
+  font-size: 10.5px;
+  line-height: 1;
+  color: var(--color-scr-muted);
+  background: rgba(255, 255, 255, 0.08);
+  transition:
+    background-color 140ms ease-out,
+    color 140ms ease-out,
+    transform 140ms ease-out;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .scr-chip:hover {
+    color: var(--color-scr-text);
+    background: rgba(255, 255, 255, 0.13);
+  }
+}
+
+.scr-chip:active {
+  transform: scale(0.96);
+}
+
+/* The chip that is currently chosen, in a row of them. */
+.scr-chip[data-on] {
+  color: var(--color-scr-ink);
+  background: var(--color-scr-text);
+}
+
+.scr-chip:focus-visible {
+  outline: 2px solid rgba(255, 255, 255, 0.6);
+  outline-offset: 1px;
+}
+
+/* The chips that float over the scene. The scene behind them can be any
+   colour at all, so these sit on their own solid slab instead of a tint. */
+.scr-chip--scene {
+  padding: 5px 10px;
+  color: rgba(255, 255, 255, 0.85);
+  background: rgba(16, 17, 20, 0.82);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.1);
+  backdrop-filter: blur(6px);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .scr-chip--scene:hover {
+    color: #fff;
+    background: rgba(28, 29, 34, 0.88);
+  }
+}
+
+.scr-chip--scene[data-on] {
+  color: var(--color-scr-ink);
+  background: rgba(255, 255, 255, 0.92);
+  box-shadow: none;
+}
+
+/* The style names. Their hover has to be gated the same way the CSS ones are —
+   a Tailwind `hover:` utility fires on a tap and stays lit afterwards. */
+.scr-style {
+  transition:
+    background-color 140ms ease-out,
+    color 140ms ease-out,
+    transform 140ms ease-out;
+}
+
+.scr-style:active {
+  transform: scale(0.97);
+}
+
+.scr-style:focus-visible {
+  outline: 2px solid rgba(255, 255, 255, 0.6);
+  outline-offset: 1px;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .scr-style[aria-pressed="false"]:hover {
+    background: rgba(255, 255, 255, 0.06);
+    color: var(--color-scr-text);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .scr-slider,
+  .scr-slider__mark,
+  .scr-pill__lit,
+  .scr-pill__option,
+  .scr-chip,
+  .scr-style {
+    transition: none;
+  }
+
+  .scr-reset {
+    animation-duration: 1ms;
+  }
+}
+
+/* --- the drawer ------------------------------------------------------------
+   Width, not transform: the scene is a flex sibling and has to actually be
+   given the room back. One easing, shared with .rise, so everything on this
+   page decelerates the same way. */
+.scr-drawer {
+  /* 360 is the width the controls are laid out for, but not at the cost of the
+     scene: on a 375px phone a full-width drawer leaves a fifteen-pixel
+     sliver of scene, which is not a preview of anything. */
+  --scr-drawer-width: min(360px, calc(100vw - 56px));
+  /* Nothing at all when shut. The notch floats over the picture instead of
+     standing on a 26px strip of its own, so the scene really does reach the
+     edge of the window rather than stopping just short of it. */
+  width: 0;
+  transition:
+    width 380ms var(--scr-ease),
+    opacity 200ms ease-out;
+}
+
+.scr-drawer[data-open="true"] {
+  width: var(--scr-drawer-width);
+}
+
+/* The panel carries its own background, and travels with it.
+ *
+ * It used to be bare, with the drawer painted behind it — which meant that the
+ * instant the drawer was told to close, its background vanished while the
+ * panel was still sliding, and forty controls spent 380ms travelling across a
+ * bright carousel with nothing behind them. The dark goes when the panel goes,
+ * because it is part of the panel.
+ *
+ * The two edges track each other exactly on the way: the drawer's left edge is
+ * at `vw − 360t` and so is the panel's, so there is never a seam between them.
+ */
+.scr-drawer__inner {
+  width: var(--scr-drawer-width);
+  background: var(--color-scr-panel);
+  box-shadow: inset 1px 0 0 var(--color-scr-line);
+  transform: translateX(100%);
+  transition: transform 380ms var(--scr-ease);
+}
+
+.scr-drawer[data-open="true"] .scr-drawer__inner {
+  transform: none;
+}
+
+.scr-drawer[data-hidden] {
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* A phone. The drawer takes no room from the scene — it lies over it, nearly
+   full width, and the shape is there again the moment it folds away. */
+.scr-drawer[data-overlay] {
+  position: absolute;
+  inset: 0 0 0 auto;
+  z-index: 10;
+  --scr-drawer-width: min(360px, calc(100vw - 44px));
+  box-shadow: -12px 0 40px -16px rgba(0, 0, 0, 0.7);
+}
+
+/* Fixed to the window rather than placed inside the drawer, which crops to 26px
+   when shut: the hover growth was being sliced off by that crop, so the one bit
+   of feedback saying "this opens" arrived as a fragment. Nothing else escapes —
+   the shell clips, and this is the only thing that needs not to be clipped. */
+.scr-notch {
+  position: fixed;
+  top: 50%;
+  right: 0;
+  z-index: 20;
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 92px;
+  transform: translateY(-50%);
+  border-radius: 13px 0 0 13px;
+  color: var(--color-scr-muted);
+  background: rgba(15, 16, 19, 0.82);
+  backdrop-filter: blur(10px);
+  box-shadow:
+    inset 1px 0 0 rgba(255, 255, 255, 0.09),
+    inset 0 1px 0 rgba(255, 255, 255, 0.09),
+    inset 0 -1px 0 rgba(255, 255, 255, 0.09),
+    0 6px 22px -8px rgba(0, 0, 0, 0.55);
+  transition:
+    width 180ms var(--scr-ease),
+    color 140ms ease-out;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .scr-notch:hover {
+    width: 32px;
+    color: var(--color-scr-text);
+  }
+}
+
+.scr-notch:focus-visible {
+  outline: 2px solid rgba(255, 255, 255, 0.6);
+  outline-offset: -2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .scr-drawer,
+  .scr-drawer__inner,
+  .scr-notch {
+    transition-duration: 1ms;
+  }
+}
+
+/* --- the export menu -------------------------------------------------------
+   Bottom-left, over the scene. It grows up out of its own trigger rather than
+   fading in over it: the origin is the corner it came from, so the menu reads
+   as the button opening rather than as a panel arriving from nowhere. */
+.scr-export__trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  height: 36px;
+  padding: 0 14px;
+  border-radius: 12px;
+  font-size: 12px;
+  line-height: 1;
+  color: var(--color-scr-text);
+  background: rgba(22, 24, 28, 0.85);
+  backdrop-filter: blur(10px);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08);
+  transition:
+    background-color 140ms ease-out,
+    transform 140ms ease-out;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .scr-export__trigger:hover {
+    background: rgba(30, 32, 37, 0.9);
+  }
+}
+
+.scr-export__trigger:active {
+  transform: scale(0.97);
+}
+
+.scr-export__trigger:focus-visible {
+  outline: 2px solid rgba(255, 255, 255, 0.6);
+  outline-offset: 2px;
+}
+
+.scr-export__menu {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 316px;
+  padding: 4px;
+  border-radius: 14px;
+  background: rgba(22, 24, 28, 0.92);
+  backdrop-filter: blur(14px);
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.08),
+    0 18px 40px -12px rgba(0, 0, 0, 0.7);
+  transform-origin: bottom left;
+}
+
+/* Nothing in the real world appears from nothing, so this starts at 96% rather
+   than at zero. The exit is quicker than the entrance — the system responding
+   should always outpace the person deciding. */
+@keyframes scr-menu-in {
+  from {
+    opacity: 0;
+    transform: scale(0.96) translateY(6px);
+  }
+}
+
+@keyframes scr-menu-out {
+  to {
+    opacity: 0;
+    transform: scale(0.97) translateY(4px);
+  }
+}
+
+.scr-export__menu[data-phase="opening"] {
+  animation: scr-menu-in 200ms var(--scr-ease) both;
+}
+
+.scr-export__menu[data-phase="closing"] {
+  animation: scr-menu-out 130ms ease-out both;
+}
+
+.scr-export__row {
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 9px 10px;
+  border-radius: 10px;
+  color: var(--color-scr-muted);
+  transition:
+    background-color 120ms ease-out,
+    transform 180ms var(--scr-ease);
+}
+
+/* The word that divides the menu in two: what goes to the clipboard, what
+   goes to disk. */
+.scr-export__group {
+  padding: 7px 10px 3px;
+  font-size: 9.5px;
+  line-height: 1;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--color-scr-faint);
+}
+.scr-export__group + .scr-export__row { margin-top: 0; }
+.scr-export__row + .scr-export__group { margin-top: 4px; border-top: 1px solid var(--color-scr-line); padding-top: 9px; }
+
+/* The verb on the right of every row — Copy or Download — drawn as a small
+   button so the row looks like it does something, not just like a label. */
+.scr-export__action {
+  flex-shrink: 0;
+  padding: 5px 9px;
+  border-radius: 999px;
+  font-size: 10.5px;
+  line-height: 1;
+  color: var(--color-scr-text);
+  background: rgba(255, 255, 255, 0.09);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08);
+  transition: background-color 120ms ease-out, color 120ms ease-out;
+}
+.scr-export__action[data-done] {
+  color: var(--color-scr-ink);
+  background: var(--color-scr-text);
+}
+@media (hover: hover) and (pointer: fine) {
+  .scr-export__row:hover .scr-export__action { background: rgba(255, 255, 255, 0.16); }
+}
+
+/* Taken. The row settles back a touch and a band of light crosses it once —
+   a single pass, not a shimmer that keeps going, because the thing it reports
+   happened once. */
+.scr-export__row[data-taken] {
+  background: rgba(255, 255, 255, 0.07);
+  transform: translateX(2px);
+}
+
+.scr-export__sweep {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0;
+  background: linear-gradient(
+    100deg,
+    transparent 20%,
+    rgba(255, 255, 255, 0.16) 46%,
+    rgba(190, 255, 214, 0.22) 52%,
+    transparent 78%
+  );
+}
+
+.scr-export__row[data-taken] .scr-export__sweep {
+  animation: scr-sweep 620ms var(--scr-ease) 1;
+}
+
+@keyframes scr-sweep {
+  from {
+    opacity: 1;
+    transform: translateX(-105%);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(105%);
+  }
+}
+
+/* Staggered on the way in only. On the way out they should leave together —
+   a menu that unravels row by row feels reluctant to close. */
+.scr-export__menu[data-phase="opening"] .scr-export__row {
+  animation: scr-menu-in 200ms var(--scr-ease) both;
+  animation-delay: calc(var(--i) * 30ms);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .scr-export__row:hover {
+    background: rgba(255, 255, 255, 0.06);
+  }
+}
+
+.scr-export__row:active {
+  transform: scale(0.98);
+}
+
+.scr-export__row:focus-visible {
+  outline: 2px solid rgba(255, 255, 255, 0.6);
+  outline-offset: -2px;
+}
+
+/* The glyph and the tick share one box and cross over inside it, so the row
+   never reflows and the two never sit side by side. */
+.scr-export__glyph {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 14px;
+  height: 14px;
+  flex: none;
+}
+
+.scr-export__glyph-off,
+.scr-export__glyph-on {
+  position: absolute;
+  display: grid;
+  place-items: center;
+}
+
+.scr-export__glyph-off {
+  transition:
+    opacity 120ms ease-out,
+    transform 120ms ease-out;
+}
+
+.scr-export__glyph-on {
+  color: #4ade80;
+  opacity: 0;
+  transform: scale(0.6);
+  transition:
+    opacity 120ms ease-out,
+    transform 260ms cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.scr-export__glyph[data-done] .scr-export__glyph-off {
+  opacity: 0;
+  transform: scale(0.8);
+}
+
+.scr-export__glyph[data-done] .scr-export__glyph-on {
+  opacity: 1;
+  transform: scale(1);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .scr-export__menu,
+  .scr-export__menu[data-phase="opening"] .scr-export__row,
+  .scr-export__row[data-taken] .scr-export__sweep {
+    animation-duration: 1ms;
+    animation-delay: 0ms;
+  }
+
+  .scr-export__row[data-taken] {
+    transform: none;
+  }
+
+  .scr-export__trigger,
+  .scr-export__row,
+  .scr-export__sweep,
+  .scr-export__glyph-off,
+  .scr-export__glyph-on {
+    transition: none;
+  }
+}
+
+/* --- picker grids ----------------------------------------------------------
+   Shapes, materials, environments and effects are all chosen from a grid of
+   pictures. One grid, four uses. */
+.scr-grid { display: grid; gap: 6px; }
+.scr-grid[data-cols="4"] { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.scr-grid[data-cols="5"] { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+.scr-grid[data-cols="6"] { grid-template-columns: repeat(6, minmax(0, 1fr)); }
+.scr-grid[data-cols="8"] { gap: 5px; grid-template-columns: repeat(8, minmax(0, 1fr)); }
+.scr-tile {
+  position: relative; aspect-ratio: 1; overflow: hidden; border-radius: 9px;
+  background: var(--color-scr-raised);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.05);
+  transition: transform 140ms var(--scr-ease), box-shadow 140ms ease-out;
+}
+.scr-tile img { display: block; width: 100%; height: 100%; object-fit: cover; }
+.scr-tile[aria-pressed="true"] { box-shadow: inset 0 0 0 1px rgba(255,255,255,0.05), 0 0 0 2px rgba(255, 255, 255, 0.75); }
+@media (hover: hover) and (pointer: fine) { .scr-tile:hover { transform: scale(1.04); } }
+.scr-tile:active { transform: scale(0.96); }
+.scr-tile:focus-visible { outline: 2px solid rgba(255,255,255,0.85); outline-offset: 2px; }
+/* The upload, drawn as a tile among the tiles: a dashed one, because it is an
+   empty slot rather than a shape. */
+.scr-tile--upload {
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 5px;
+  color: var(--color-scr-muted); background: transparent;
+  box-shadow: none;
+  background-image: repeating-linear-gradient(0deg, rgba(255,255,255,0.22) 0 4px, transparent 4px 8px),
+    repeating-linear-gradient(90deg, rgba(255,255,255,0.22) 0 4px, transparent 4px 8px),
+    repeating-linear-gradient(180deg, rgba(255,255,255,0.22) 0 4px, transparent 4px 8px),
+    repeating-linear-gradient(270deg, rgba(255,255,255,0.22) 0 4px, transparent 4px 8px);
+  background-size: 1px 100%, 100% 1px, 1px 100%, 100% 1px;
+  background-position: 0 0, 0 0, 100% 0, 0 100%;
+  background-repeat: no-repeat;
+}
+@media (hover: hover) and (pointer: fine) { .scr-tile--upload:hover { color: var(--color-scr-text); background-color: rgba(255,255,255,0.04); } }
+.scr-tile--upload:disabled { opacity: 0.5; }
+.scr-tile__name {
+  position: absolute; inset-inline: 0; bottom: 0; padding: 3px 5px;
+  font-size: 9.5px; line-height: 1.1; color: var(--color-scr-muted);
+  background: linear-gradient(to top, rgba(8,9,11,0.85), transparent);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+
+/* --- the light pad ---------------------------------------------------------
+   A square you drag a dot around to place the key light. */
+.scr-pad {
+  position: relative; aspect-ratio: 2 / 1; border-radius: 10px; touch-action: none;
+  background-color: var(--color-scr-raised);
+  background-image: radial-gradient(rgba(255,255,255,0.12) 1px, transparent 1.5px);
+  background-size: 14px 14px; background-position: center;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.05);
+}
+.scr-pad__dot {
+  position: absolute; width: 16px; height: 16px; border-radius: 50%;
+  transform: translate(-50%, -50%); background: #fff;
+  box-shadow: 0 0 0 3px rgba(255,255,255,0.18), 0 2px 8px rgba(0,0,0,0.5);
+}
+.scr-pad:focus-visible { outline: 2px solid rgba(255,255,255,0.6); outline-offset: 2px; }
+
+/* --- colour swatch ---------------------------------------------------------
+   The native picker hidden under a square, so the OS dialog does the work. */
+/* A ring that reads on any colour: a light line outside so a black swatch is
+   not lost on the black panel, and a dark line inside so a white one is not
+   lost against the ring. The hover brightens it to say "this opens". */
+.scr-colour { position: relative; width: 26px; height: 26px; border-radius: 7px; overflow: hidden;
+  box-shadow: inset 0 0 0 1px rgba(0,0,0,0.35), 0 0 0 1px rgba(255,255,255,0.28);
+  transition: box-shadow 140ms ease-out; }
+@media (hover: hover) and (pointer: fine) {
+  .scr-colour:hover { box-shadow: inset 0 0 0 1px rgba(0,0,0,0.35), 0 0 0 1px rgba(255,255,255,0.6); }
+}
+.scr-colour:has(input:focus-visible) { box-shadow: inset 0 0 0 1px rgba(0,0,0,0.35), 0 0 0 2px rgba(255,255,255,0.85); }
+.scr-colour input { position: absolute; inset: -8px; width: calc(100% + 16px); height: calc(100% + 16px); cursor: pointer; border: 0; padding: 0; background: none; }
+
+/* --- checkerboard for a transparent backdrop ------------------------------- */
+.scr-checker {
+  background-color: #1a1b1f;
+  background-image: linear-gradient(45deg, #24262b 25%, transparent 25%), linear-gradient(-45deg, #24262b 25%, transparent 25%),
+    linear-gradient(45deg, transparent 75%, #24262b 75%), linear-gradient(-45deg, transparent 75%, #24262b 75%);
+  background-size: 20px 20px; background-position: 0 0, 0 10px, 10px -10px, -10px 0;
+}
+
+/* --- toast ----------------------------------------------------------------- */
+.scr-toast { position: absolute; left: 50%; bottom: 72px; transform: translateX(-50%);
+  padding: 9px 14px; border-radius: 12px; font-size: 12px; color: var(--color-scr-text);
+  background: rgba(22, 24, 28, 0.92); backdrop-filter: blur(10px);
+  box-shadow: inset 0 0 0 1px rgba(255,255,255,0.08), 0 12px 30px -10px rgba(0,0,0,0.7);
+  animation: scr-rise 260ms var(--scr-ease) both; }
